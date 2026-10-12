@@ -66,17 +66,24 @@ jobs:
           terraform_version: "1.16.5"
 
       - name: Init (R2 backend)
+        # WHY backend.hcl file, CLI flags kyun nahi: -backend-config="k=v"
+        # flags nested blocks (endpoints { s3 = ... }) express nahi kar
+        # sakte — is liye file banao aur -backend-config=backend.hcl do.
         run: |
-          terraform init \
-            -backend-config="bucket=tfstate-kubeadm-cicd" \
-            -backend-config="key=oci-kubeadm-cicd/terraform.tfstate" \
-            -backend-config="region=auto" \
-            -backend-config="endpoints.s3=https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            -backend-config="skip_credentials_validation=true" \
-            -backend-config="skip_metadata_api_check=true" \
-            -backend-config="skip_region_validation=true" \
-            -backend-config="skip_requesting_account_id=true" \
-            -backend-config="use_lockfile=true"
+          cat > backend.hcl <<EOF
+          bucket = "tfstate-kubeadm-cicd"
+          key    = "oci-kubeadm-cicd/terraform.tfstate"
+          region = "auto"
+          endpoints = {
+            s3 = "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          }
+          skip_credentials_validation = true
+          skip_metadata_api_check      = true
+          skip_region_validation       = true
+          skip_requesting_account_id   = true
+          use_lockfile                 = true
+          EOF
+          terraform init -backend-config=backend.hcl
 
       - name: Validate
         run: terraform validate
@@ -133,17 +140,24 @@ jobs:
           terraform_version: "1.16.5"
 
       - name: Init (R2 backend)
+        # WHY backend.hcl file, CLI flags kyun nahi: -backend-config="k=v"
+        # flags nested blocks (endpoints { s3 = ... }) express nahi kar
+        # sakte — is liye file banao aur -backend-config=backend.hcl do.
         run: |
-          terraform init \
-            -backend-config="bucket=tfstate-kubeadm-cicd" \
-            -backend-config="key=oci-kubeadm-cicd/terraform.tfstate" \
-            -backend-config="region=auto" \
-            -backend-config="endpoints.s3=https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            -backend-config="skip_credentials_validation=true" \
-            -backend-config="skip_metadata_api_check=true" \
-            -backend-config="skip_region_validation=true" \
-            -backend-config="skip_requesting_account_id=true" \
-            -backend-config="use_lockfile=true"
+          cat > backend.hcl <<EOF
+          bucket = "tfstate-kubeadm-cicd"
+          key    = "oci-kubeadm-cicd/terraform.tfstate"
+          region = "auto"
+          endpoints = {
+            s3 = "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          }
+          skip_credentials_validation = true
+          skip_metadata_api_check      = true
+          skip_region_validation       = true
+          skip_requesting_account_id   = true
+          use_lockfile                 = true
+          EOF
+          terraform init -backend-config=backend.hcl
 
       - name: Download reviewed plan
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
