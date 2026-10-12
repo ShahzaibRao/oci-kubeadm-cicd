@@ -159,13 +159,38 @@ jobs:
           EOF
           terraform init -backend-config=backend.hcl
 
-      - name: Download reviewed plan
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: tfplan-${{ github.run_id }}
-          path: infra
-
-      # WHY tfplan file apply: wahi plan lagta hai jo review hua tha.
-      # Dobara plan banane se darmiyan mein kuch badal sakta hai.
-      - name: Apply
-        run: terraform apply -input=false -auto-approve tfplan
+      # WHY yahan dobara plan banta hai (reviewed artifact nahi):
+      # AD hunt ke liye har attempt par ad_index badalta hai
+      # (-var="ad_index=N"), is liye ek fixed tfplan kaam nahi karta.
+      # Farq SIRF ad_index ka hai — baaki config wahi jo PR par review hui.
+      # Kamyab AD milne ke baad usay variables.tf default mein lock karna
+      # (follow-up PR) taake future plan/apply mein drift/recreate na ho.
+      - name: Apply with AD capacity hunt (0 → 1 → 2)
+        run: |
+          SUCCESS=false
+          for AD in 0 1 2; do
+            echo "=== AD index $AD try ho raha hai ==="
+            set +e
+            OUTPUT=$(terraform apply -input=false -auto-approve -var="ad_index=$AD" 2>&1)
+            CODE=$?
+            set -e
+            echo "$OUTPUT" | tail -12
+            if [ "$CODE" -eq 0 ]; then
+              echo "VM AD-$AD mein ban gayi"
+              SUCCESS=true
+              break
+            fi
+            if echo "$OUTPUT" | grep -q "Out of host capacity"; then
+              echo "AD-$AD full — agla AD try karte hain"
+              continue
+            fi
+            echo "Capacity ka masla NAHI — asal error, fail fast:"
+            echo "$OUTPUT" | grep -B2 -A10 "Error" | head -40
+            exit 1
+          done
+          if [ "$SUCCESS" != "true" ]; then
+            echo "Teeno ADs full — kuch ghanton baad 'Re-run failed jobs' dabao."
+            exit 1
+          fi
+          echo "--- Outputs (IPs) ---"
+          terraform output
