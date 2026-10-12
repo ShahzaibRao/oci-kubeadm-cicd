@@ -1,0 +1,157 @@
+# ============================================================
+# WHAT: Terraform CI — infra ka GitOps pipeline.
+# WHY:  Laptop se `terraform apply` production style nahi:
+#       - PR par plan CI mein chalta hai, output PR comment mein
+#         aata hai (merge se pehle nazar aata hai kya banega)
+#       - main par merge ke baad GitHub Environment "production"
+#         ki manual approval ke baad hi apply hota hai
+#       - State R2 mein, secrets GitHub Secrets mein
+#       - Recruiter ko poora audit trail GitHub mein nazar aata hai:
+#         kaunsi PR ne kaunsa infra banaya
+# HOW:  PR #4 (R2 backend) merge ke baad hi ye workflow kaam
+#       karega — versions.tf mein backend "s3" zaroori hai.
+# ============================================================
+name: terraform
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  # R2 backend credentials — env se, kabhi file mein nahi
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  # OCI provider auth — env se, runner par ~/.oci/config nahi hota
+  OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+  OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_REGION: ${{ secrets.OCI_REGION }}
+  # Terraform variables — TF_VAR_* env vars variables.tf se map hote hain
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+  TF_VAR_compartment_id: ${{ secrets.TF_VAR_COMPARTMENT_ID }}
+  TF_VAR_ssh_public_key: ${{ secrets.TF_VAR_SSH_PUBLIC_KEY }}
+  # NOTE: TF_VAR_admin_cidr abhi default (0.0.0.0/0) par hai.
+  # Lockdown ke waqt secret banao aur ye line uncomment karo:
+  # TF_VAR_admin_cidr: ${{ secrets.TF_VAR_ADMIN_CIDR }}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      # Pinned SHAs — WHY: supply-chain security. Tag move ho sakta
+      # hai, SHA nahi. Har action ka version comment mein likha hai.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Init (R2 backend)
+        run: |
+          terraform init \
+            -backend-config="bucket=tfstate-kubeadm-cicd" \
+            -backend-config="key=oci-kubeadm-cicd/terraform.tfstate" \
+            -backend-config="region=auto" \
+            -backend-config="endpoints.s3=https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            -backend-config="skip_credentials_validation=true" \
+            -backend-config="skip_metadata_api_check=true" \
+            -backend-config="skip_region_validation=true" \
+            -backend-config="skip_requesting_account_id=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Plan
+        id: plan
+        run: terraform plan -input=false -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Upload plan artifact
+        if: steps.plan.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: infra/tfplan
+          retention-days: 7
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const plan = `${{ steps.plan.outputs.stdout }}`.slice(0, 60000);
+            const body = `## Terraform Plan\n<details><summary>Click to expand</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  apply:
+    name: apply
+    # WHY sirf push par: PR par sirf plan, apply sirf main par.
+    # Aur environment gate ke baghair ye job shuru hi nahi hoti.
+    if: github.event_name == 'push'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Init (R2 backend)
+        run: |
+          terraform init \
+            -backend-config="bucket=tfstate-kubeadm-cicd" \
+            -backend-config="key=oci-kubeadm-cicd/terraform.tfstate" \
+            -backend-config="region=auto" \
+            -backend-config="endpoints.s3=https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            -backend-config="skip_credentials_validation=true" \
+            -backend-config="skip_metadata_api_check=true" \
+            -backend-config="skip_region_validation=true" \
+            -backend-config="skip_requesting_account_id=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Download reviewed plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: infra
+
+      # WHY tfplan file apply: wahi plan lagta hai jo review hua tha.
+      # Dobara plan banane se darmiyan mein kuch badal sakta hai.
+      - name: Apply
+        run: terraform apply -input=false -auto-approve tfplan
