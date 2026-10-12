@@ -1,0 +1,17 @@
+# ============================================================
+# Copy to terraform.tfvars for LOCAL runs only.
+# Asli file kabhi commit nahi hogi (.gitignore mein hai).
+# CI mein ye values TF_VAR_* env vars se aayengi.
+# ============================================================
+
+tenancy_ocid   = "ocid1.tenancy.oc1..xxxx"
+compartment_id = "ocid1.compartment.oc1..xxxx" # root compartment ke liye tenancy OCID hi likho
+
+region      = "eu-frankfurt-1"
+name_prefix = "cicd"
+
+# Apni public IP: curl -4 ifconfig.me
+admin_cidr = "0.0.0.0/0" # <-- apply se pehle apni IP par lock karo, masalan "39.40.12.34/32"
+
+# cat ~/.ssh/id_ed25519.pub
+ssh_public_key = "ssh-ed25519 AAAA... you@example"
