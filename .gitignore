@@ -1,0 +1,17 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+*.hcl.local
+
+# Ansible
+ansible/inventory/inventory.ini
+*.retry
+*.vault_pass
+ansible/*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+*.swp
