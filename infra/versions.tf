@@ -15,8 +15,10 @@ terraform {
     }
   }
 
-  # NOTE: backend block nahi hai = LOCAL state (terraform.tfstate
-  # tumhari machine par). Learning ke liye simple rakha hai.
-  # Remote state (R2/S3) baad mein add karenge jab CI se apply
-  # karne lagenge — ek step ek waqt mein.
+  # Remote state: Cloudflare R2 (S3-compatible).
+  # WHY R2: local terraform.tfstate delete ho sakta hai, aur team mein
+  # sab ko same state chahiye. R2 free tier mein aata hai.
+  # Credentials backend.hcl mein (gitignored) — kabhi commit nahi.
+  # Local: terraform init -backend-config=backend.hcl
+  backend "s3" {}
 }
