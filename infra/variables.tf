@@ -93,3 +93,9 @@ variable "nodes" {
     error_message = "Total boot volume must not exceed the Always Free limit of 200 GB."
   }
 }
+
+variable "ad_index" {
+  description = "Availability Domain index (0, 1, 2). CI capacity-hunt loop har attempt par alag AD try karta hai (-var=\"ad_index=N\"). Default nodes map wala hai taake normal plan drift na kare."
+  type        = number
+  default     = 2
+}
