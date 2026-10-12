@@ -62,6 +62,8 @@ variable "nodes" {
   }))
   description = "Dono Kubernetes nodes. Alag ADs mein taake ek AD down ho to dono na jayen."
 
+  # WHY single node: Oracle ne June 2026 mein Always Free A1 quota
+  # 4/24 se 2/12 kar di — 2 nodes ab free tier par namumkin.
   default = {
     "k8s-control-plane" = {
       ad_index                = 0
@@ -70,25 +72,18 @@ variable "nodes" {
       boot_volume_size_in_gbs = 100
       role                    = "control-plane"
     }
-    "k8s-worker" = {
-      ad_index                = 1
-      ocpus                   = 2
-      memory_in_gbs           = 12
-      boot_volume_size_in_gbs = 100
-      role                    = "worker"
-    }
   }
 
   # WHY validations: free tier ki hard limits — apply se PEHLE
   # pakra jaye taake aadhe bane infra ka masla na ho.
   validation {
-    condition     = sum([for n in var.nodes : n.ocpus]) <= 4
-    error_message = "Total OCPUs must not exceed the Always Free limit of 4."
+    condition     = sum([for n in var.nodes : n.ocpus]) <= 2
+    error_message = "Total OCPUs must not exceed the Always Free limit of 2 (cut June 2026)."
   }
 
   validation {
-    condition     = sum([for n in var.nodes : n.memory_in_gbs]) <= 24
-    error_message = "Total RAM must not exceed the Always Free limit of 24 GB."
+    condition     = sum([for n in var.nodes : n.memory_in_gbs]) <= 12
+    error_message = "Total RAM must not exceed the Always Free limit of 12 GB (cut June 2026)."
   }
 
   validation {
