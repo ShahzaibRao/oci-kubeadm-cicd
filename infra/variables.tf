@@ -67,14 +67,14 @@ variable "nodes" {
       ad_index                = 0
       ocpus                   = 2
       memory_in_gbs           = 12
-      boot_volume_size_in_gbs = 50
+      boot_volume_size_in_gbs = 100
       role                    = "control-plane"
     }
     "k8s-worker" = {
       ad_index                = 1
       ocpus                   = 2
       memory_in_gbs           = 12
-      boot_volume_size_in_gbs = 50
+      boot_volume_size_in_gbs = 100
       role                    = "worker"
     }
   }
