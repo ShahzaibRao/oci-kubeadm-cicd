@@ -66,9 +66,9 @@ variable "nodes" {
   # 4/24 se 2/12 kar di — 2 nodes ab free tier par namumkin.
   default = {
     "k8s-control-plane" = {
-      # WHY ad_index=1: AD-0 mein "Out of host capacity" — ARM capacity
-      # AD-specific hoti hai, is liye doosre AD par try.
-      ad_index                = 1
+      # WHY ad_index=2: AD-1 aur AD-2 dono mein "Out of host capacity" —
+      # teesra AD try kar rahe hain.
+      ad_index                = 2
       ocpus                   = 2
       memory_in_gbs           = 12
       boot_volume_size_in_gbs = 100
