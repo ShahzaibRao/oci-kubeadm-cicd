@@ -94,6 +94,12 @@ variable "nodes" {
   }
 }
 
+variable "fault_domain" {
+  description = "Fault Domain override (FAULT-DOMAIN-1/2/3). null = auto-place. CI hunt loop set karta hai."
+  type        = string
+  default     = null
+}
+
 variable "ad_index" {
   description = "Availability Domain index (0, 1, 2). CI capacity-hunt loop har attempt par alag AD try karta hai (-var=\"ad_index=N\"). Default nodes map wala hai taake normal plan drift na kare."
   type        = number
