@@ -26,6 +26,7 @@ module "compute" {
   # har attempt par alag AD try karta hai. Default (var.ad_index=2) par
   # ye no-op hai — nodes map wali value hi lagti hai.
   nodes = { for name, cfg in var.nodes : name => merge(cfg, { ad_index = var.ad_index }) }
+  fault_domain       = var.fault_domain
 }
 
 # NOTE: LB aur Vault modules baad mein aayenge — apne phase mein.
