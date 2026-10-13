@@ -15,6 +15,8 @@ resource "oci_core_instance" "nodes" {
 
   compartment_id      = var.compartment_id
   availability_domain = var.availability_domains[each.value.ad_index]
+  # WHY: null = OCI khud place kare (default). CI hunt explicit FD try karta hai.
+  fault_domain        = var.fault_domain
   display_name        = each.key
   shape               = "VM.Standard.A1.Flex" # Free tier ARM shape
 

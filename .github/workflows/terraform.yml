@@ -165,32 +165,37 @@ jobs:
       # Farq SIRF ad_index ka hai — baaki config wahi jo PR par review hui.
       # Kamyab AD milne ke baad usay variables.tf default mein lock karna
       # (follow-up PR) taake future plan/apply mein drift/recreate na ho.
-      - name: Apply with AD capacity hunt (0 → 1 → 2)
+      - name: Apply with capacity hunt (3 AD × 3 FD = 9 combos)
         run: |
           SUCCESS=false
+          WINNER=""
           for AD in 0 1 2; do
-            echo "=== AD index $AD try ho raha hai ==="
-            set +e
-            OUTPUT=$(terraform apply -input=false -auto-approve -var="ad_index=$AD" 2>&1)
-            CODE=$?
-            set -e
-            echo "$OUTPUT" | tail -12
-            if [ "$CODE" -eq 0 ]; then
-              echo "VM AD-$AD mein ban gayi"
-              SUCCESS=true
-              break
-            fi
-            if echo "$OUTPUT" | grep -q "Out of host capacity"; then
-              echo "AD-$AD full — agla AD try karte hain"
-              continue
-            fi
-            echo "Capacity ka masla NAHI — asal error, fail fast:"
-            echo "$OUTPUT" | grep -B2 -A10 "Error" | head -40
-            exit 1
+            for FD in 1 2 3; do
+              echo "=== AD-$AD / FD-$FD try ho raha hai ==="
+              set +e
+              OUTPUT=$(terraform apply -input=false -auto-approve -var="ad_index=$AD" -var="fault_domain=FAULT-DOMAIN-$FD" 2>&1)
+              CODE=$?
+              set -e
+              echo "$OUTPUT" | tail -8
+              if [ "$CODE" -eq 0 ]; then
+                echo "VM ban gayi: AD-$AD FD-$FD"
+                SUCCESS=true
+                WINNER="ad_index=$AD fault_domain=FAULT-DOMAIN-$FD"
+                break 2
+              fi
+              if echo "$OUTPUT" | grep -q "Out of host capacity"; then
+                echo "Full — agla combo"
+                continue
+              fi
+              echo "Capacity ka masla NAHI — asal error, fail fast:"
+              echo "$OUTPUT" | grep -B2 -A10 "Error" | head -40
+              exit 1
+            done
           done
           if [ "$SUCCESS" != "true" ]; then
-            echo "Teeno ADs full — kuch ghanton baad 'Re-run failed jobs' dabao."
+            echo "9 combos sab full — kuch ghanton baad 'Re-run failed jobs' dabao."
             exit 1
           fi
+          echo "--- Winner: $WINNER (follow-up PR mein default lock karna) ---"
           echo "--- Outputs (IPs) ---"
           terraform output

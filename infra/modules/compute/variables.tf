@@ -26,6 +26,12 @@ variable "ssh_public_key" {
   description = "Tumhari SSH public key — VMs mein inject hogi (private key repo mein kabhi nahi)"
 }
 
+variable "fault_domain" {
+  description = "Fault Domain (e.g. FAULT-DOMAIN-1). null = OCI auto-place (default behavior)."
+  type        = string
+  default     = null
+}
+
 variable "nodes" {
   type = map(object({
     ad_index                = number
