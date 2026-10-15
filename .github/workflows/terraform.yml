@@ -28,6 +28,12 @@ permissions:
   contents: read
   pull-requests: write
 
+# WHY: capacity-hunter workflow ke saath overlap na ho — state lock
+# contention se bachne ke liye dono ek hi group mein queue hote hain.
+concurrency:
+  group: oci-terraform-state
+  cancel-in-progress: false
+
 env:
   TF_IN_AUTOMATION: "true"
   # R2 backend credentials — env se, kabhi file mein nahi
