@@ -1,0 +1,127 @@
+# ============================================================
+# WHAT: Capacity hunter — free-tier ARM ke liye automated retry bot.
+# WHY:  Frankfurt mein ARM capacity unpredictable windows mein khulti
+#       hai. Har dafa manually "Re-run failed jobs" dabana toil hai.
+#       Ye workflow har 2 ghante khud try karta hai
+#       (9 combos: 3 AD × 3 FD). VM ban jate hi agli runs no-op
+#       ho jati hain (early exit) — phir file delete kar do.
+#
+# SCOPE (imandari se): is mein `environment: production` gate NAHI.
+#       Ye sirf main branch ki REVIEWED config retry karta hai —
+#       koi nayi cheez bana hi nahi sakta (config fixed hai).
+#       Blast radius = wahi 1 free-tier VM jo har PR plan mein dikhta hai.
+#       Main terraform.yml workflow ka approval gate waisa ka waisa hai.
+#
+# COST: ~10-12 min Actions time per run → ~140 min/day.
+#       Free plan (2000 min/month) mein ~2 hafte ki runway.
+#       VM milte hi is file ko delete kar do (ek PR) ya workflow disable.
+#
+# SAFETY: `concurrency` group se hunter aur main workflow kabhi
+#       overlap nahi karte — state lock contention ka sawal hi nahi.
+# ============================================================
+name: capacity-hunter
+
+on:
+  schedule:
+    - cron: "0 */2 * * *" # har 2 ghante (UTC): 05,07,09... PKT
+  workflow_dispatch: # manual trigger bhi
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oci-terraform-state
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+  OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_REGION: ${{ secrets.OCI_REGION }}
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+  TF_VAR_compartment_id: ${{ secrets.TF_VAR_COMPARTMENT_ID }}
+  TF_VAR_ssh_public_key: ${{ secrets.TF_VAR_SSH_PUBLIC_KEY }}
+
+jobs:
+  hunt:
+    name: hunt
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+
+      - name: Init (R2 backend)
+        run: |
+          cat > backend.hcl <<EOF
+          bucket = "tfstate-kubeadm-cicd"
+          key    = "oci-kubeadm-cicd/terraform.tfstate"
+          region = "auto"
+          endpoints = {
+            s3 = "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          }
+          skip_credentials_validation = true
+          skip_metadata_api_check      = true
+          skip_region_validation       = true
+          skip_requesting_account_id   = true
+          use_lockfile                 = true
+          EOF
+          terraform init -backend-config=backend.hcl
+
+      - name: Check if VM already exists
+        id: check
+        run: |
+          if terraform state list 2>/dev/null | grep -q 'oci_core_instance.nodes'; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "VM state mein maujood hai — hunt ki zaroorat nahi."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "VM nahi hai — hunt shuru."
+          fi
+
+      - name: Hunt (3 AD × 3 FD = 9 combos)
+        if: steps.check.outputs.exists != 'true'
+        run: |
+          SUCCESS=false
+          WINNER=""
+          for AD in 0 1 2; do
+            for FD in 1 2 3; do
+              echo "=== AD-$AD / FD-$FD try ho raha hai ==="
+              set +e
+              OUTPUT=$(terraform apply -input=false -auto-approve -var="ad_index=$AD" -var="fault_domain=FAULT-DOMAIN-$FD" 2>&1)
+              CODE=$?
+              set -e
+              echo "$OUTPUT" | tail -8
+              if [ "$CODE" -eq 0 ]; then
+                echo "VM ban gayi: AD-$AD FD-$FD"
+                SUCCESS=true
+                WINNER="ad_index=$AD fault_domain=FAULT-DOMAIN-$FD"
+                break 2
+              fi
+              if echo "$OUTPUT" | grep -q "Out of host capacity"; then
+                echo "Full — agla combo"
+                continue
+              fi
+              echo "Capacity ka masla NAHI — asal error, fail fast:"
+              echo "$OUTPUT" | grep -B2 -A10 "Error" | head -40
+              exit 1
+            done
+          done
+          if [ "$SUCCESS" != "true" ]; then
+            echo "9 combos sab full — agli scheduled run 2 ghante baad."
+            exit 1
+          fi
+          echo "--- Winner: $WINNER (follow-up PR mein default lock karna) ---"
+          echo "--- Outputs (IPs) ---"
+          terraform output
