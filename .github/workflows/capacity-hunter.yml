@@ -3,8 +3,8 @@
 # WHY:  Frankfurt mein ARM capacity unpredictable windows mein khulti
 #       hai. Har dafa manually "Re-run failed jobs" dabana toil hai.
 #       Ye workflow har 2 ghante khud try karta hai
-#       (9 combos: 3 AD × 3 FD). VM ban jate hi agli runs no-op
-#       ho jati hain (early exit) — phir file delete kar do.
+#       (9 combos: 3 AD × 3 FD). VM milte hi workflow KHUD KO
+#       DISABLE kar leta hai (API se) — dobara kabhi nahi jaagta.
 #
 # SCOPE (imandari se): is mein `environment: production` gate NAHI.
 #       Ye sirf main branch ki REVIEWED config retry karta hai —
@@ -14,7 +14,7 @@
 #
 # COST: ~10-12 min Actions time per run → ~140 min/day.
 #       Free plan (2000 min/month) mein ~2 hafte ki runway.
-#       VM milte hi is file ko delete kar do (ek PR) ya workflow disable.
+#       VM milte hi KHUD DISABLE ho jata hai — kuch karne ki zaroorat nahi.
 #
 # SAFETY: `concurrency` group se hunter aur main workflow kabhi
 #       overlap nahi karte — state lock contention ka sawal hi nahi.
@@ -28,6 +28,7 @@ on:
 
 permissions:
   contents: read
+  actions: write # WHY: kaam khatam hone par khud ko disable karne ke liye
 
 concurrency:
   group: oci-terraform-state
@@ -91,6 +92,7 @@ jobs:
           fi
 
       - name: Hunt (3 AD × 3 FD = 9 combos)
+        id: hunt
         if: steps.check.outputs.exists != 'true'
         run: |
           SUCCESS=false
@@ -107,6 +109,7 @@ jobs:
                 echo "VM ban gayi: AD-$AD FD-$FD"
                 SUCCESS=true
                 WINNER="ad_index=$AD fault_domain=FAULT-DOMAIN-$FD"
+                echo "hunted=true" >> "$GITHUB_OUTPUT"
                 break 2
               fi
               if echo "$OUTPUT" | grep -q "Out of host capacity"; then
@@ -125,3 +128,18 @@ jobs:
           echo "--- Winner: $WINNER (follow-up PR mein default lock karna) ---"
           echo "--- Outputs (IPs) ---"
           terraform output
+
+      # WHY: kaam khatam — VM ya to abhi bani hai ya pehle se thi.
+      # Workflow khud ko disable kar leta hai taake schedule dobara
+      # kabhi na jaage. (VM delete karne par dobara chahiye to
+      # Actions tab se manually enable kar lena.)
+      - name: Disable hunter (kaam khatam)
+        if: steps.check.outputs.exists == 'true' || steps.hunt.outputs.hunted == 'true'
+        run: |
+          WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows" \
+            --jq '.workflows[] | select(.path==".github/workflows/capacity-hunter.yml") | .id')
+          if gh api --method PUT "/repos/${{ github.repository }}/actions/workflows/$WF_ID/disable"; then
+            echo "Hunter disabled — ab dobara nahi jaagega."
+          else
+            echo "WARNING: self-disable fail hua — agli run sirf check karke exit karegi."
+          fi
