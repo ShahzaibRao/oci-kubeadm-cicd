@@ -3,8 +3,9 @@
 # WHY:  Laptop se `terraform apply` production style nahi:
 #       - PR par plan CI mein chalta hai, output PR comment mein
 #         aata hai (merge se pehle nazar aata hai kya banega)
-#       - main par merge ke baad GitHub Environment "production"
-#         ki manual approval ke baad hi apply hota hai
+#       - main par merge ke baad apply KHUD chalta hai (koi manual
+#         approval nahi — 2026-10-15 se environment gate hata diya;
+#         PR review hi approval hai)
 #       - State R2 mein, secrets GitHub Secrets mein
 #       - Recruiter ko poora audit trail GitHub mein nazar aata hai:
 #         kaunsi PR ne kaunsa infra banaya
@@ -128,11 +129,12 @@ jobs:
   apply:
     name: apply
     # WHY sirf push par: PR par sirf plan, apply sirf main par.
-    # Aur environment gate ke baghair ye job shuru hi nahi hoti.
+    # NOTE: `environment: production` gate hata diya (2026-10-15) —
+    # capacity hunt ke liye har apply par manual approval toil tha.
+    # Ab PR review hi approval hai (single-person project).
     if: github.event_name == 'push'
     needs: plan
     runs-on: ubuntu-latest
-    environment: production
     defaults:
       run:
         working-directory: infra
